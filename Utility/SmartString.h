@@ -889,7 +889,7 @@ namespace Utilities
         }
 
         // start and end are both inclusive.
-        SmartString& remove(const size_t startLocation, const size_t endLocation)
+        SmartString& remove(const int startLocation, const int endLocation)
         {
             if(endLocation < startLocation) return *this;
             if(endLocation == startLocation) {
