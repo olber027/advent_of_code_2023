@@ -4,7 +4,7 @@
 #include <SmartString.h>
 
 int main() {
-    std::ifstream input_file(R"(C:\Users\Matt\CLionProjects\advent_of_code_2023\Day_23\input_data\input.txt)");
+    std::ifstream input_file("/mnt/c/Users/Matt/CLionProjects/advent_of_code_2023/Day_23/input_data/input.txt");
     std::string   l;
     while(std::getline(input_file, l))
     {
