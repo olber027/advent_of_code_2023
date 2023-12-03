@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 #include <array>
+#include <cmath>
 #include <map>
 #include <utility>
 #include <iterator>
@@ -31,152 +32,10 @@ namespace Utilities
         decltype(static_cast<To>(std::declval<From>())), To>::value>::type>
         : std::true_type { };
 
-        char* backingString;
-        int stringSize;
+        constexpr static int DEFAULT_PRECISION = 5;
+
+        std::string backingString;
         int precision;
-        int memorySize;
-
-        /*!
-         * @brief destroys the underlying string and resets sizes. Precision is maintained.
-         */
-        void destroy()
-        {
-            if(backingString != nullptr)
-            {
-                delete[] backingString;
-                stringSize    = 0;
-                backingString = nullptr;
-                memorySize    = 0;
-            }
-        }
-
-        /*!
-         * @brief Destroys the existing string and creates a new one of size \p size.
-         * @param size - size of string to create
-         */
-        void initialize(const int size)
-        {
-            destroy();
-            stringSize                = size;
-            backingString             = new char[stringSize + 1];
-            backingString[stringSize] = '\0';
-            memorySize                = stringSize + 1;
-        }
-
-        /*!
-         * @brief extend the size of the string by the number of \p charsToAdd. The null character is added to the end of the string,
-         *        but any other added characters will not be initialized. If \p addToFront is true, the additional characters will be
-         *        added to the front of the string instead of the back.
-         * @param charsToAdd - number of characters to increase the string size by
-         * @param addToFront - If true, characters will be added to the front of the string
-         */
-        void extend(const int charsToAdd, const bool addToFront)
-        {
-            if(charsToAdd < 1)
-            {
-                return;
-            }
-
-            int newSize   = stringSize + charsToAdd + 1;
-            char* newBackingString = nullptr;
-
-            if(memorySize <= newSize)
-            {
-                if(memorySize <= 0)
-                {
-                    memorySize = 1;
-                }
-                while(memorySize <= newSize)
-                {
-                    memorySize *= 2;
-                }
-                newBackingString = new char[memorySize];
-            }
-
-            if(newBackingString != nullptr)
-            {
-                int offset = addToFront ? charsToAdd : 0;
-                for(int i = offset; i < stringSize + offset; i++)
-                {
-                    newBackingString[i] = backingString[i - offset];
-                }
-                newBackingString[stringSize + offset] = '\0';
-                delete[] backingString;
-                backingString = newBackingString;
-            }
-            else if(addToFront)
-            {
-                for(int i = stringSize; i >= 0; i--)
-                {
-                    backingString[i + charsToAdd] = backingString[i];
-                }
-            }
-
-            stringSize += charsToAdd;
-        }
-
-        /*!
-         * @brief default version of SmartString::extend(const int, const bool). Additional characters
-         *        will be added to the back of the string.
-         * @param charsToAdd - number of characters to increase the string size by
-         */
-        inline void extend(const int charsToAdd)
-        {
-            extend(charsToAdd, false);
-        }
-
-        /*!
-         * @brief Mostly just here so that templated functions can call SmartString::calculateSize(const char*) const
-         *        without worrying about type mismatches.
-         * @param str - String to calculate the size of
-         * @return The length of the string
-         */
-        static inline int calculateSize(const std::string& str)
-        {
-            return str.length();
-        }
-
-        /*!
-         * @brief Mostly just here so that templated functions can call SmartString::calculateSize(const char*) const
-         *        without worrying about type mismatches.
-         * @param str - String to calculate the size of
-         * @return The length of the string
-         */
-        static inline int calculateSize(const SmartString& str)
-        {
-            return str.length();
-        }
-
-        /*!
-         * @brief Calculates the size of the given char*. Simply searches for the first instance of '\0'.
-         *        Will likely seg fault if there is no null character in the string.
-         * @param str - String to calculate the size of
-         * @return The length of the string
-         */
-        static int calculateSize(const char* str)
-        {
-            int size = 0;
-            while(str[size] != '\0')
-            {
-                size++;
-            }
-            return size;
-        }
-
-        static const char* getDataPointer(const char* str)
-        {
-            return str;
-        }
-
-        static const char* getDataPointer(const std::string& str)
-        {
-            return str.data();
-        }
-
-        static const char* getDataPointer(const SmartString& str)
-        {
-            return str.backingString;
-        }
 
         /*!
          * @brief Converts a single to digit to its character equivalent. This assumes
@@ -201,37 +60,23 @@ namespace Utilities
         }
 
         /*!
-         * @brief Finds the absolute value of a number. Didn't want to include a math
-         *        library just for one absolute value function.
-         * @tparam T - Any arithmetic type.
-         * @param val - Value to calculate the absolute value of.
-         * @return The absolute value of \p val
-         */
-        template <typename T>
-        static inline T abs(const T val)
-        {
-            static_assert(std::is_arithmetic<T>::value, "arithmetic type required.");
-            return val < 0 ? val * -1 : val;
-        }
-
-        /*!
          * @brief Finds the number of format arguments present in the current string.
          *        Format arguments are of the form {0}, {1}, etc.
          * @return The number of format arguments
          */
-        int getNumArguments() const
+        [[nodiscard]] int getNumArguments() const
         {
-            int location;
+            std::string::size_type location;
             int count = 0;
             do {
                 SmartString arg;
                 arg << "{" << count << "}";
                 location = findSubstring(arg);
-                if(location >= 0)
+                if(location != std::string::npos)
                 {
                     count++;
                 }
-            } while(location >= 0);
+            } while(location != std::string::npos);
             return count;
         }
 
@@ -330,84 +175,20 @@ namespace Utilities
             formatHelper<depth + 1>(args...);
         }
 
-        template<typename T>
-        SmartString& appendHelper(const T& t)
-        {
-            int initialSize = stringSize;
-            int size = calculateSize(t);
-            extend(size);
-            std::memcpy(backingString + initialSize, getDataPointer(t), size);
-            backingString[stringSize] = '\0';
-            return *this;
-        }
-
-        template<typename T>
-        SmartString& prependHelper(const T& t)
-        {
-            int size = calculateSize(t);
-            extend(size, true);
-            std::memcpy(backingString, getDataPointer(t), size);
-            return *this;
-        }
-
         inline void checkBounds(const int lowerBound, const int upperBound) const
         {
             if(lowerBound < 0) throw std::out_of_range("Given lower bound is less than 0");
-            if(upperBound > stringSize) throw std::out_of_range("Given upper bound is greater than the string size");
+            if(upperBound > backingString.length()) throw std::out_of_range("Given upper bound is greater than the string size");
         }
 
     public:
-        SmartString() : backingString(nullptr), stringSize(0), precision(5), memorySize(0) {}
-        SmartString(const std::string& init) : SmartString()
-        {
-            if(init.length() != 0)
-            {
-                initialize(static_cast<int>(init.length()));
-                std::memcpy(backingString, init.data(), stringSize);
-            }
-        }
-        SmartString(std::string&& init) : SmartString()
-        {
-            if(init.length() != 0)
-            {
-                initialize(static_cast<int>(init.length()));
-                std::memcpy(backingString, init.data(), stringSize);
-            }
-        }
-        SmartString(const char init) : SmartString()
-        {
-            initialize(1);
-            stringSize       = 1;
-            backingString[0] = init;
-        }
-        SmartString(const char* init) : SmartString()
-        {
-            if(init != nullptr)
-            {
-                initialize(calculateSize(init));
-                std::memcpy(backingString, init, stringSize);
-            }
-        }
-        SmartString(const std::stringstream& init) : SmartString()
-        {
-            const std::string str(init.str());
-            if(str.length() != 0)
-            {
-                initialize(static_cast<int>(str.length()));
-                std::memcpy(backingString, str.data(), stringSize);
-            }
-            precision = init.precision();
-        }
-        SmartString(std::stringstream&& init) : SmartString()
-        {
-            const std::string str(init.str());
-            if(str.length() != 0)
-            {
-                initialize(static_cast<int>(str.length()));
-                std::memcpy(backingString, str.data(), stringSize);
-            }
-            precision = init.precision();
-        }
+        SmartString() : backingString{}, precision{DEFAULT_PRECISION} { }
+        SmartString(const std::string& init) : backingString{init}, precision{DEFAULT_PRECISION} { }
+        SmartString(std::string&& init) : backingString{init}, precision{DEFAULT_PRECISION} { }
+        SmartString(const char init) : backingString{init}, precision{DEFAULT_PRECISION} { }
+        SmartString(const char* init) : backingString{init}, precision{DEFAULT_PRECISION} { }
+        SmartString(const std::stringstream& init) : backingString{init.str()}, precision{static_cast<int>(init.precision())} { }
+        SmartString(std::stringstream&& init) : backingString{init.str()}, precision{static_cast<int>(init.precision())} { }
         explicit inline SmartString(const unsigned int init) : SmartString()
         {
             append(init);
@@ -424,124 +205,90 @@ namespace Utilities
         {
             append(init);
         }
-        SmartString(const int numChars, const char fill) : SmartString()
-        {
-            initialize(numChars);
-            for(int i = 0; i < numChars; i++)
-            {
-                backingString[i] = fill;
-            }
-        }
+        SmartString(const int numChars, const char fill) : backingString(numChars, fill), precision{DEFAULT_PRECISION} { }
 
-        SmartString(const SmartString& other) : SmartString()
-        {
-            initialize(other.stringSize);
-            std::memcpy(backingString, other.backingString, stringSize);
-            precision = other.precision;
-        }
-        SmartString(SmartString&& other) noexcept
-        {
-            backingString       = other.backingString;
-            stringSize          = other.stringSize;
-            precision           = other.precision;
-            memorySize          = other.memorySize;
-            other.backingString = nullptr;
-        }
+        SmartString(const SmartString& other) = default;
+        SmartString(SmartString&& other) noexcept = default;
+        ~SmartString() = default;
+        SmartString& operator=(const SmartString& rhs) = default;
+        SmartString& operator=(SmartString&& rhs) noexcept = default;
 
-        ~SmartString()
-        {
-            destroy();
-        }
-
-        explicit inline operator std::string() const { return str(); }
+        explicit inline operator std::string() const { return backingString; }
         explicit inline operator char*() const { return c_str(); }
-        explicit operator std::stringstream() const
-        {
-            std::stringstream result;
-            result << backingString;
-            return result;
-        }
+        explicit operator std::stringstream() const { return std::stringstream{backingString}; }
 
-        SmartString& operator=(const SmartString& rhs)
-        {
-            if(&rhs != this)
-            {
-                initialize(rhs.stringSize);
-                std::memcpy(backingString, rhs.backingString, stringSize);
-                precision = rhs.precision;
-            }
-            return *this;
-        }
-
-        SmartString& operator=(SmartString&& rhs) noexcept
-        {
-            if(&rhs != this)
-            {
-                destroy();
-                precision         = rhs.precision;
-                stringSize        = rhs.stringSize;
-                backingString     = rhs.backingString;
-                rhs.precision     = 5;
-                rhs.stringSize    = 0;
-                rhs.backingString = nullptr;
-            }
-            return *this;
-        }
+        // iterator exposure
+        auto begin()   { return std::begin(backingString);   }
+        auto end()     { return std::end(backingString);     }
+        auto rbegin()  { return std::rbegin(backingString);  }
+        auto rend()    { return std::rend(backingString);    }
+        [[nodiscard]] auto cbegin()  const { return std::cbegin(backingString);  }
+        [[nodiscard]] auto cend()    const { return std::cend(backingString);    }
+        [[nodiscard]] auto crbegin() const { return std::crbegin(backingString); }
+        [[nodiscard]] auto crend()   const { return std::crend(backingString);   }
 
         SmartString& operator=(const std::string& rhs)
         {
-            initialize(static_cast<int>(rhs.length()));
-            std::memcpy(backingString, rhs.data(), stringSize);
+            backingString = rhs;
+            precision = DEFAULT_PRECISION;
             return *this;
         }
 
         SmartString& operator=(std::string&& rhs)
         {
-            initialize(static_cast<int>(rhs.length()));
-            std::memcpy(backingString, rhs.data(), stringSize);
+            backingString = rhs;
+            precision = DEFAULT_PRECISION;
             return *this;
         }
 
         SmartString& operator=(const char* rhs)
         {
-            initialize(calculateSize(rhs));
-            std::memcpy(backingString, rhs, stringSize);
+            backingString = rhs;
+            precision = DEFAULT_PRECISION;
             return *this;
         }
 
         inline SmartString& operator=(const std::stringstream& rhs)
         {
-            return (*this = rhs.str());
+            backingString = rhs.str();
+            precision = static_cast<int>(rhs.precision());
+            return *this;
         }
 
         inline SmartString& operator=(std::stringstream&& rhs)
         {
-            return (*this = rhs.str());
-        }
-
-        inline SmartString& append(const char* str)
-        {
-            return appendHelper<const char*>(str);
-        }
-
-        inline SmartString& prepend(const char* str)
-        {
-            return prependHelper<const char*>(str);
+            backingString = rhs.str();
+            precision = static_cast<int>(rhs.precision());
+            return *this;
         }
 
         inline SmartString& append(const std::string& str)
         {
-            return appendHelper<const std::string&>(str);
+            backingString.append(str);
+            return *this;
         }
 
         inline SmartString& prepend(const std::string& str)
         {
-            return prependHelper<const std::string&>(str);
+            backingString.insert(begin(), str.begin(), str.end());
+            return *this;
+        }
+
+        inline SmartString& append(const char* str)
+        {
+            backingString.append(str);
+            return *this;
+        }
+
+        inline SmartString& prepend(const char* str)
+        {
+            return prepend(std::string(str));
         }
 
         inline SmartString& append(const std::stringstream& strm)
         {
-            return append(strm.str());
+            backingString.append(strm.str());
+            return *this;
         }
 
         inline SmartString& prepend(const std::stringstream& strm)
@@ -551,38 +298,35 @@ namespace Utilities
 
         inline SmartString& append(const SmartString& str)
         {
-            return appendHelper<const SmartString&>(str);
+            backingString.append(str.backingString);
+            return *this;
         }
 
         inline SmartString& append(SmartString&& str)
         {
-            return appendHelper<SmartString&&>(str);
+            backingString.append(str.backingString);
+            return *this;
         }
 
         inline SmartString& prepend(const SmartString& str)
         {
-            return prependHelper<const SmartString&>(str);
+            return prepend(str.backingString);
         }
 
         inline SmartString& prepend(SmartString&& str)
         {
-            return prependHelper<SmartString&&>(str);
+            return prepend(str.backingString);
         }
 
         SmartString& append(const char c)
         {
-            extend(1);
-            backingString[stringSize - 1] = c;
-            backingString[stringSize]     = '\0';
-
+            backingString += c;
             return *this;
         }
 
         SmartString& prepend(const char c)
         {
-            extend(1, true);
-            backingString[0] = c;
-
+            backingString.insert(begin(), c);
             return *this;
         }
 
@@ -635,7 +379,7 @@ namespace Utilities
             temp.append(leftOfDecimal);
             temp.append('.');
 
-            double rightOfDecimal = abs(val) - abs(leftOfDecimal);
+            double rightOfDecimal = std::abs(val) - abs(leftOfDecimal);
             for(int i = 0; i < valPrecision; i++)
             {
                 auto digit = static_cast<unsigned int>(rightOfDecimal * 10);
@@ -682,7 +426,7 @@ namespace Utilities
         SmartString& append(const float val, const unsigned int valPrecision)
         {
             SmartString temp;
-            auto leftOfDecimal = static_cast<unsigned int>(abs(val));
+            auto leftOfDecimal = static_cast<unsigned int>(std::abs(val));
 
             if(val < 0)
             {
@@ -752,87 +496,47 @@ namespace Utilities
 
         inline bool operator!=(const SmartString& str) const
         {
-            return !(*this == str);
+            return backingString != str.backingString;
         }
 
-        inline bool operator!=(const std::stringstream& str) const
+        inline bool operator!=(const std::stringstream& strm) const
         {
-            return !(*this == str);
+            return backingString != strm.str();
         }
 
         inline bool operator!=(const std::string& str) const
         {
-            return !(*this == str);
+            return backingString != str;
         }
 
         inline bool operator!=(const char* str) const
         {
-            return !(*this == str);
+            return backingString != std::string(str);
         }
 
         bool operator==(const SmartString& str) const
         {
-            if(stringSize != str.stringSize)
-            {
-                return false;
-            }
-            for(int i = 0; i < stringSize; i++)
-            {
-                if(str.backingString[i] != backingString[i])
-                {
-                    return false;
-                }
-            }
-            return true;
+            return backingString == str.backingString;
         }
 
-        inline bool operator==(const std::stringstream& str) const
+        inline bool operator==(const std::stringstream& strm) const
         {
-            return (*this == str.str());
+            return backingString == strm.str();
         }
 
         bool operator==(const std::string& str) const
         {
-            if(stringSize != str.size())
-            {
-                return false;
-            }
-            for(int i = 0; i < stringSize; i++)
-            {
-                if(str[i] != backingString[i])
-                {
-                    return false;
-                }
-            }
-            return true;
+            return backingString == str;
         }
 
         bool operator==(const char* str) const
         {
-            if(stringSize != calculateSize(str))
-            {
-                return false;
-            }
-            for(unsigned int i = 0; i < stringSize; i++)
-            {
-                if(str[i] != backingString[i])
-                {
-                    return false;
-                }
-            }
-            return true;
+            return backingString == std::string(str);
         }
 
         bool operator<(const SmartString& str) const
         {
-            if(str.isEmpty()) return false;
-            if(isEmpty()) return true;
-
-            unsigned int min = stringSize < str.stringSize ? stringSize : str.stringSize;
-            unsigned int i   = 0;
-            while(i < min && backingString[i] == str.backingString[i]) { i++; }
-
-            return backingString[i] < str.backingString[i];
+            return backingString < str.backingString;
         }
 
         template <typename T>
@@ -843,7 +547,7 @@ namespace Utilities
 
         inline bool operator<=(const SmartString& str) const
         {
-            return (this->str() <= str.str());
+            return (backingString <= str.backingString);
         }
 
         template <typename T>
@@ -854,7 +558,7 @@ namespace Utilities
 
         inline bool operator>(const SmartString& str) const
         {
-            return (this->str() > str.str());
+            return backingString > str.backingString;
         }
 
         template <typename T>
@@ -865,7 +569,7 @@ namespace Utilities
 
         inline bool operator>=(const SmartString& str) const
         {
-            return (this->str() >= str.str());
+            return backingString >= str.backingString;
         }
 
         template <typename T>
@@ -875,7 +579,12 @@ namespace Utilities
             return (*this >= SmartString(str));
         }
 
-        inline char& operator[](const unsigned int index) const
+        inline char& operator[](const size_t index)
+        {
+            return backingString[index];
+        }
+
+        inline char operator[](const size_t index) const
         {
             return backingString[index];
         }
@@ -935,7 +644,7 @@ namespace Utilities
         {
             std::string temp;
             in >> temp;
-            smartString = SmartString(temp);
+            smartString.backingString = temp;
             return in;
         }
 
@@ -949,7 +658,7 @@ namespace Utilities
         {
             std::string temp;
             in >> temp;
-            smartString = SmartString(temp);
+            smartString.backingString = temp;
             return in;
         }
 
@@ -963,7 +672,7 @@ namespace Utilities
         {
             std::string temp;
             in >> temp;
-            smartString = SmartString(temp);
+            smartString.backingString = temp;
             return in;
         }
 
@@ -977,7 +686,7 @@ namespace Utilities
         {
             std::string temp;
             in >> temp;
-            smartString = SmartString(temp);
+            smartString.backingString = temp;
             return in;
         }
 
@@ -986,102 +695,55 @@ namespace Utilities
             precision = newPrecision > 0 ? newPrecision : 1;
         }
 
-        inline int getPrecision() const
+        [[nodiscard]] inline int getPrecision() const
         {
             return precision;
         }
 
-        char getLast() const
+        [[nodiscard]] char getLast() const
         {
-            if(stringSize > 0)
-            {
-                return backingString[stringSize - 1];
-            }
-            return '\0';
+            return backingString.back();
         }
 
-        char getFirst() const
+        [[nodiscard]] char getFirst() const
         {
-            if(stringSize > 0)
-            {
-                return backingString[0];
-            }
-            return '\0';
+            return backingString.front();
         }
 
-        // start and end are both inclusive.
-        SmartString getSubstring(const int startLocation, const int endLocation) const
+        [[nodiscard]] SmartString getSubstring(const std::string::size_type startLocation, const std::string::size_type endLocation) const
         {
-            checkBounds(startLocation, endLocation);
-
-            const int substringSize = endLocation - startLocation + 1;
-            SmartString result;
-            result.initialize(substringSize);
-            std::memcpy(result.backingString, backingString + startLocation, substringSize);
-            result[substringSize] = '\0';
-            return result;
+            return backingString.substr(startLocation, endLocation - startLocation);
         }
 
         template <typename T>
-        inline T getSubstring(const int startLocation, const int endLocation) const
+        inline T getSubstring(const std::string::size_type startLocation, const std::string::size_type endLocation) const
         {
             static_assert(is_castable<SmartString, T>::value, "SmartString must be convertible to an object of type T");
             return static_cast<T>(getSubstring(startLocation, endLocation));
         }
 
-        // Uses the Knuth-Morris-Pratt algorithm for finding the substring
-        int findSubstring(const int startingLocation, const SmartString& target) const
+        [[nodiscard]] std::string::size_type findSubstring(const std::string::size_type startingLocation, const SmartString& target) const
         {
-            if(startingLocation < 0)
-            {
-                return -1;
-            }
-
-            std::vector<int> table = createKMPTable(target);
-            int currentLocation    = startingLocation;
-            int targetLocation     = 0;
-
-            while(currentLocation < stringSize)
-            {
-                if(target[targetLocation] == backingString[currentLocation])
-                {
-                    targetLocation++;
-                    currentLocation++;
-                    if(targetLocation == target.length())
-                    {
-                        return currentLocation - targetLocation;
-                    }
-                }
-                else
-                {
-                    targetLocation = table[targetLocation];
-                    if(targetLocation < 0)
-                    {
-                        currentLocation++;
-                        targetLocation++;
-                    }
-                }
-            }
-            return -1;
+            return backingString.find(target.backingString, startingLocation);
         }
 
-        inline int findSubstring(const SmartString& target) const
+        [[nodiscard]] inline std::string::size_type findSubstring(const SmartString& target) const
         {
             return findSubstring(0, target);
         }
 
         template <typename T>
-        inline int findSubstring(const T& target) const
+        [[nodiscard]] inline std::string::size_type findSubstring(const T& target) const
         {
             static_assert(std::is_convertible<T, SmartString>::value, "T must be convertible to a SmartString");
             return findSubstring(0, SmartString(target));
         }
 
         template <typename T>
-        inline bool contains(const T& target) const
+        [[nodiscard]] inline bool contains(const T& target) const
         {
             static_assert(std::is_convertible<T, SmartString>::value, "T must be convertible to a SmartString");
-            return findSubstring(target) >= 0;
+            return findSubstring(target) != std::string::npos;
         }
 
         template <typename T>
@@ -1090,8 +752,8 @@ namespace Utilities
             static_assert(std::is_convertible<T, SmartString>::value, "T must be convertible to a SmartString");
             unsigned int numInstances = 0;
             SmartString targ(target);
-            int location = findSubstring(targ);
-            while(location >= 0 && location < length())
+            std::string::size_type location = findSubstring(targ);
+            while(location != std::string::npos && location < length())
             {
                 numInstances++;
                 location = findSubstring(location + 1, targ);
@@ -1106,7 +768,7 @@ namespace Utilities
         }
 
         template <typename T, typename U>
-        std::vector<T> split(const U& target) const
+        [[nodiscard]] std::vector<T> split(const U& target) const
         {
             static_assert(is_castable<SmartString, T>::value, "SmartString must be convertible to an object of type T");
             static_assert(std::is_convertible<U, SmartString>::value, "U must be convertible to a SmartString");
@@ -1114,8 +776,8 @@ namespace Utilities
             std::vector<T> result;
             SmartString temp(*this);
             SmartString targ(target);
-            int location = temp.findSubstring(targ);
-            while(location >= 0)
+            std::string::size_type location = temp.findSubstring(targ);
+            while(location != std::string::npos)
             {
                 if(location == 0)
                 {
@@ -1195,7 +857,7 @@ namespace Utilities
             static_assert(std::is_convertible<T, SmartString>::value, "T must be convertible to a SmartString");
             const SmartString toStrip(chars);
             int index           = 0;
-            while(index < stringSize && toStrip.contains(backingString[index]))
+            while(index < length() && toStrip.contains(backingString[index]))
             {
                 index++;
             }
@@ -1208,12 +870,12 @@ namespace Utilities
         {
             static_assert(std::is_convertible<T, SmartString>::value, "T must be convertible to a SmartString");
             const SmartString toStrip(chars);
-            int index           = static_cast<int>(stringSize) - 1;
+            int index           = static_cast<int>(length()) - 1;
             while(index >= 0 && toStrip.contains(backingString[index]))
             {
                 index--;
             }
-            remove(index + 1, static_cast<int>(stringSize) - 1);
+            remove(index + 1, static_cast<int>(length()) - 1);
             return *this;
         }
 
@@ -1227,18 +889,14 @@ namespace Utilities
         }
 
         // start and end are both inclusive.
-        SmartString& remove(const int startLocation, const int endLocation)
+        SmartString& remove(const size_t startLocation, const size_t endLocation)
         {
             if(endLocation < startLocation) return *this;
-            checkBounds(startLocation, endLocation);
-
-            int numRemovedCharacters = (endLocation - startLocation + 1);
-            for(int j = endLocation + 1; j < stringSize; j++)
-            {
-                backingString[j - numRemovedCharacters] = backingString[j];
+            if(endLocation == startLocation) {
+                backingString.erase(startLocation, 1);
+                return *this;
             }
-            stringSize = stringSize - numRemovedCharacters;
-            backingString[stringSize] = '\0';
+            backingString.erase(startLocation, endLocation - startLocation);
             return *this;
         }
 
@@ -1274,38 +932,15 @@ namespace Utilities
 
         SmartString& replace(const SmartString& target, const SmartString& newSubstring)
         {
-            int location = findSubstring(target);
-            if(location < 0 || isEmpty() || target.isEmpty())
+            if(isEmpty() || target.isEmpty()) return *this;
+
+            std::string::size_type location = findSubstring(target);
+            if(location == std::string::npos)
             {
                 return *this;
             }
 
-            // since we know target is a substring at this point, we can guarantee newSize will be at least the size of newSubstring.length()
-            int newSize = stringSize + newSubstring.length() - target.length();
-            while(memorySize <= newSize)
-            {
-                memorySize *= 2;
-            }
-            char* tempPointer = new char[memorySize];
-
-            for(int i = 0; i < location; i++)
-            {
-                tempPointer[i] = backingString[i];
-            }
-            for(int i = 0; i < newSubstring.length(); i++)
-            {
-                tempPointer[location + i] = newSubstring[i];
-            }
-            for(int i = location + target.length(); i < stringSize; i++)
-            {
-                tempPointer[i + newSubstring.length() - target.length()] = backingString[i];
-            }
-            tempPointer[newSize] = '\0';
-
-            delete[] backingString;
-            backingString = tempPointer;
-            stringSize    = newSize;
-
+            backingString.replace(location, target.length(), newSubstring.backingString);
             return *this;
         }
 
@@ -1434,7 +1069,7 @@ namespace Utilities
             for(int i = static_cast<int>(leftOfDecimal.length()) - 1; i >= 0; i--)
             {
                 unsigned int num = charToDigit(leftOfDecimal[i]);
-                if(num > 9 || num < 0)
+                if(num > 9)
                 {
                     return false;
                 }
@@ -1446,7 +1081,7 @@ namespace Utilities
             for(unsigned int i = 0; i < rightOfDecimal.length(); i++)
             {
                 unsigned int num = charToDigit(rightOfDecimal[i]);
-                if(num > 9 || num < 0)
+                if(num > 9)
                 {
                     return false;
                 }
@@ -1510,41 +1145,40 @@ namespace Utilities
             return static_cast<T>(whitespace());
         }
 
-        inline std::string str() const
+        [[nodiscard]] inline std::string str() const
         {
-            if(stringSize > 0)
-                return { backingString };
-            return std::string{""};
+            return std::string{backingString};
         }
 
-        inline char* c_str() const
+        [[nodiscard]] inline char* c_str() const
         {
             // need the extra character for the null terminator
-            char* result = new char[stringSize + 1];
-            std::memcpy(result, backingString, stringSize+1);
+            char* result = new char[backingString.length() + 1];
+            std::memcpy(result, &backingString[0], backingString.length()+1);
             return result;
         }
 
-        inline std::stringstream sstream() const
+        [[nodiscard]] inline std::stringstream sstream() const
         {
             std::stringstream result;
-            result << *this;
+            result << backingString;
             return result;
         }
 
-        inline int length() const
+        [[nodiscard]] inline size_t length() const
         {
-            return stringSize;
+            return backingString.length();
         }
 
-        inline bool isEmpty() const
+        [[nodiscard]] inline bool isEmpty() const
         {
-            return stringSize == 0;
+            return backingString.empty();
         }
 
-        inline size_t memoryFootPrint() const
+        SmartString& reverse()
         {
-            return memorySize * sizeof(char);
+            std::reverse(begin(), end());
+            return *this;
         }
     };
 }// namespace Utilities
