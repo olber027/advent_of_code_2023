@@ -13,6 +13,9 @@ public:
     int checkNext(char c) {
         if(repr[++current_index] != c) {
             current_index = -1;
+            if(repr[0] == c) {
+                current_index = 0;
+            }
             return -1;
         }
         if(current_index == (repr.length() - 1)) {

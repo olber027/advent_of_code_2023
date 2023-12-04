@@ -14,6 +14,7 @@
 #include <array>
 #include <cmath>
 #include <map>
+#include <algorithm>
 #include <utility>
 #include <iterator>
 #include <type_traits>
