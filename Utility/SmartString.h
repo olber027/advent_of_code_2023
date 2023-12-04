@@ -712,7 +712,7 @@ namespace Utilities
 
         [[nodiscard]] SmartString getSubstring(const std::string::size_type startLocation, const std::string::size_type endLocation) const
         {
-            return backingString.substr(startLocation, endLocation - startLocation);
+            return backingString.substr(startLocation, endLocation - startLocation + 1);
         }
 
         template <typename T>
@@ -896,7 +896,7 @@ namespace Utilities
                 backingString.erase(startLocation, 1);
                 return *this;
             }
-            backingString.erase(startLocation, endLocation - startLocation);
+            backingString.erase(startLocation, endLocation - startLocation + 1);
             return *this;
         }
 
