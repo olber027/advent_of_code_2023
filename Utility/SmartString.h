@@ -1181,6 +1181,13 @@ namespace Utilities
             std::reverse(begin(), end());
             return *this;
         }
+
+        SmartString& clear()
+        {
+            backingString.clear();
+            precision = DEFAULT_PRECISION;
+            return *this;
+        }
     };
 }// namespace Utilities
 
